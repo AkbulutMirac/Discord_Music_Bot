@@ -1,0 +1,8 @@
+discord.py
+yt-dlp[default]
+gTTS
+PyNaCl
+davey>=0.1.4,<0.2  # discord.py 2.7.1 does not support davey 0.2 (audio stays unencrypted = silent)
+ffmpeg-python
+fastmcp
+python-dotenv

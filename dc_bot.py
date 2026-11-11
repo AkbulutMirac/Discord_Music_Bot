@@ -1,0 +1,270 @@
+import os
+import sys
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+from discord.ext import commands
+import discord
+from discord.ext.commands import Context
+
+import yt_dlp
+from yt_dlp import YoutubeDL
+import asyncio
+
+from gtts import gTTS
+import io
+from io import BytesIO
+import time
+
+queue = []
+my_queue = []
+play_stopped = False
+YDL_OPTIONS = {
+    'format': 'ba[ext=m4a]/ba[ext=webm]/ba/b',  
+    'noplaylist': True,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'ytsearch',
+    'geo_bypass': True,  
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'source_address': '0.0.0.0',
+    'socket_timeout': 30,
+    'http_chunk_size': 10485760,
+    'prefer_ffmpeg': True,
+    'keepvideo': False,
+    'extract_flat': False,
+    # Other YouTube clients (tv/web/android_vr) give stream URLs that return 403 to ffmpeg
+    'extractor_args': {'youtube': {'player_client': ['visionos']}},
+}
+FFMPEG_OPTIONS = {
+    'before_options': '-thread_queue_size 20480 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
+    'options': '-vn -b:a 128k -bufsize 2048k'
+}
+FFMPEG_SPEAK_OPTIONS = {
+    'before_options': '-f mp3',
+    'options': '-vn -filter:a "atempo=1.25"'
+}
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+CHANNEL_ID = 1416790643271008329
+VOICE_ID = 1416790643271008330
+
+intents = discord.Intents.default()
+intents.message_content = True 
+intents.voice_states = True
+bot = commands.Bot(command_prefix='!',intents= intents,help_command=None)
+
+
+@bot.event # its for i am ready message
+async def on_ready():
+    channel = bot.get_channel(CHANNEL_ID)
+    #await channel.send('I am ready to be used :D')
+
+@bot.command()# to close my pc
+async def shutdown(ctx: Context):
+    async with ctx.channel.typing():
+        await ctx.channel.send('closing in 10 sec...')
+        os.system("shutdown /s /t 10")
+
+
+
+@bot.command() # clear the queue
+async def clear(ctx: Context):
+    async with ctx.channel.typing():
+        my_queue.clear()
+        await ctx.channel.send("queue is now empty")
+@bot.command() # add to queue
+async def add(ctx: Context, *, song: str):
+    async with ctx.channel.typing():
+        await ctx.channel.send(f" '{song}' added to the queue")
+    my_queue.append(song)
+@bot.command() # remove from queue
+async def remove(ctx: Context, *, song: str):
+    async with ctx.channel.typing():
+        for i in my_queue:
+            if song.lower() in i.lower():
+                my_queue.remove(i)
+                await ctx.channel.send(f"Removed from queue: {i}")
+                return
+        await ctx.channel.send(f"Song '{song}' not found in the queue.")
+@bot.command() # pause
+async def pause(ctx: Context):
+    async with ctx.channel.typing():
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.pause()
+            await ctx.send("Playback paused.")
+        else:
+            await ctx.send("There is no audio playing.")
+@bot.command() # resume
+async def resume(ctx: Context):
+    async with ctx.channel.typing():
+        if ctx.voice_client.is_paused():
+            ctx.voice_client.resume()
+            await ctx.send("Playback resumed.")
+        else:
+            await ctx.send("The audio is not paused.")
+@bot.command() # skip
+async def skip(ctx: Context):
+    async with ctx.channel.typing():
+        if ctx.voice_client is None:
+            await ctx.send("I am not in a voice channel!")
+            return
+        if len(my_queue) > 0:
+            if ctx.voice_client.is_playing():
+                ctx.voice_client.stop()
+                await ctx.send("Next song is playing.")
+                return
+        elif len(my_queue) == 0:
+            await ctx.send("Queue is empty. Add songs with !add.")
+            return
+        if not ctx.voice_client.is_playing():
+            await ctx.send("There is no audio :D")
+            return
+@bot.command() # stop
+async def stop(ctx: Context):
+    global play_stopped
+    play_stopped = True
+    my_queue.clear()
+    async with ctx.channel.typing():
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.stop()
+            await ctx.send("Playback stopped and queue cleaned.")
+            return
+        else:
+            await ctx.send("There is no audio :D")
+@bot.command() # leave
+async def leave(ctx: Context):
+    async with ctx.channel.typing():
+        if ctx.voice_client is None:
+            await ctx.send("I am not in a voice channel!")
+            return
+        await ctx.voice_client.disconnect()
+        await ctx.send("Disconnected from the voice channel.")
+@bot.command(name='queue')  # show queue (function renamed to avoid shadowing global `queue` list)
+async def show_queue(ctx: Context):
+    if len(my_queue) == 0:
+        await ctx.send("Queue is empty.")
+    else:
+        await ctx.send('\n'.join(my_queue))
+@bot.command() # join
+async def join(ctx: Context):
+    async with ctx.channel.typing():
+        if ctx.author.voice is None:
+            await ctx.send("You need to be in a voice channel!")
+        voice_channel = ctx.author.voice.channel
+        if ctx.voice_client is not None:
+            await ctx.send("I am already in the voice channel!")
+            return
+        voice_client = await voice_channel.connect()
+        mp3_fp = io.BytesIO()
+        tts = gTTS(text="merhaba", lang='tr')
+        tts.write_to_fp(mp3_fp)
+        mp3_fp.seek(0)
+        await asyncio.sleep(0.5)
+        source = discord.FFmpegOpusAudio(mp3_fp, pipe=True,**FFMPEG_SPEAK_OPTIONS)
+        ctx.voice_client.play(source)
+        await ctx.send(f"Connected to {voice_channel.name}")
+@bot.command()# speak
+async def speak(ctx: Context, *, text):
+    if ctx.author.voice is None:
+        await ctx.send("You need to be in a voice channel!")
+        return
+    async with ctx.channel.typing():
+        await ctx.send("Wait a moment...")
+    if ctx.voice_client is None:
+        await ctx.author.voice.channel.connect()
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        await ctx.send("The bot is currently playing audio, please wait.")
+        return
+    mp3_fp = io.BytesIO()
+    tts = gTTS(text=text, lang='tr')
+    tts.write_to_fp(mp3_fp)
+    mp3_fp.seek(0)
+    await asyncio.sleep(0.5)
+    source = discord.FFmpegOpusAudio(mp3_fp, pipe=True,**FFMPEG_SPEAK_OPTIONS)
+    ctx.voice_client.play(source)
+@bot.command() # play
+async def play(ctx: Context,*,song_name:str=None):
+    global play_stopped
+    play_stopped = False
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        await ctx.send("The bot is currently playing audio, please wait.")
+        return
+    if ctx.author.voice is None:
+        await ctx.send("You need to be in a voice channel!")
+        return
+    if song_name:
+        await ctx.channel.send("It may take a while to load the song")
+        my_queue.append(song_name)
+    if len(my_queue) == 0 and song_name is None:
+        await ctx.send("Queue is empty. Add songs with !add.")
+        return
+    if ctx.voice_client is None:
+        await ctx.author.voice.channel.connect()
+        mp3_fp = io.BytesIO()
+        tts = gTTS(text="merhaba", lang='tr')
+        tts.write_to_fp(mp3_fp)
+        mp3_fp.seek(0)
+        await asyncio.sleep(0.5)
+        source = discord.FFmpegOpusAudio(mp3_fp, pipe=True,**FFMPEG_SPEAK_OPTIONS)
+        ctx.voice_client.play(source)
+    await asyncio.sleep(0.5)
+    loop = asyncio.get_event_loop()
+    def ytdlp_extract():
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            return ydl.extract_info(f"ytsearch:{my_queue[0]}", download=False)
+    result = await loop.run_in_executor(None, ytdlp_extract)
+    first_result = result['entries'][0]
+    url = first_result['url']
+    title = first_result['title']
+    my_queue.pop(0)
+    source = discord.FFmpegOpusAudio(url, **FFMPEG_OPTIONS)
+
+    def after_playing(error):
+        # Do not auto-start next track if stop() was called
+        if error:
+            print(f"Error: {error}")
+        if play_stopped:
+            return
+        fut = asyncio.run_coroutine_threadsafe(play(ctx), bot.loop)
+        try:
+            fut.result()
+        except Exception as e:
+            print(f"After playing error: {e}")
+    
+    ctx.voice_client.play(source, after=after_playing)
+    await ctx.send(f"Now playing: {title}")
+
+
+@bot.command()
+async def help(ctx: Context):
+    async with ctx.channel.typing():
+        embed = discord.Embed(
+            title="Help — Commands",
+            description="Here are the available commands:",
+            color=discord.Color.blurple()
+        )
+        embed.add_field(name="Queue", value="`!add <song>` — Add a song to the queue\n`!remove <name>` — Remove a song from the queue\n`!clear` — Clear the queue\n`!queue` — Show the current queue", inline=False)
+        embed.add_field(name="Playback", value="`!play <song>` — Bot joins the voice channel and plays the queue or your song\n`!pause` — Pause playback\n`!resume` — Resume playback\n`!skip` — Skip to the next song\n`!stop` — Stop playback and clear the queue", inline=False)
+        embed.add_field(name="Voice (TTS)", value="`!speak <text>` — Bot speaks the given text in Turkish", inline=False)
+        embed.add_field(name="Voice Channel", value="`!join` — Bot joins your voice channel\n`!leave` — Bot leaves the voice channel", inline=False)
+        embed.add_field(name="Help", value="`!help` — Show this help message", inline=False)
+        embed.set_footer(text=f"Prefix: ! | Developed by mirage")
+
+        await ctx.send(embed=embed)
+
+bot.run(BOT_TOKEN)
+
+"""
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    if message.content.startswith('hello'):
+        await message.channel.send('hello!')
+    await bot.process_commands(message) # whenever use on_message bot wont process commands unless you add this line
+    #                                   # because on_message overrides the default command processing.
+    #                                   # process_commands(message) is control the message wheter it is command or not.
+"""
