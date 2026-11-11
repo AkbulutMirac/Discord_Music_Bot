@@ -34,8 +34,8 @@ A powerful Discord music bot that integrates with **Claude AI** via the **Model 
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/AkbulutMirac/Discord-Music-Bot.git
-cd Discord-Music-Bot
+git clone https://github.com/AkbulutMirac/Discord_Music_Bot.git
+cd Discord_Music_Bot
 ```
 
 ### 2. Install dependencies
@@ -161,7 +161,7 @@ cloudflared tunnel --url http://localhost:9000
 ## 📁 Project Structure
 
 ```
-Discord-Music-Bot/
+Discord_Music_Bot/
 ├── dc_bot.py          # Simple Discord music bot
 ├── dc_bot_mcp.py      # Music bot + MCP server (Claude control)
 ├── requirements.txt   # Python dependencies
