@@ -43,12 +43,6 @@ async def on_ready():
     channel = bot.get_channel(CHANNEL_ID)
     #await channel.send('I am ready to be used :D')
 
-@bot.command()# to close my pc
-async def shutdown(ctx: Context):
-    async with ctx.channel.typing():
-        await ctx.channel.send('closing in 10 sec...')
-        os.system("shutdown /s /t 10")
-
 
 
 @bot.command() # clear the queue
