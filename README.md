@@ -164,16 +164,42 @@ cloudflared tunnel --url http://localhost:9000
 Discord_Music_Bot/
 ├── dc_bot.py          # Simple Discord music bot
 ├── dc_bot_mcp.py      # Music bot + MCP server (Claude control)
-├── requirements.txt   # Python dependencies
+├── music_source.py    # Finds a playable YouTube stream (shared by both bots)
+├── check.py           # Health check: versions, ffmpeg, Deno, YouTube stream
+├── requirements.txt   # Python dependencies (exact, tested versions)
 ├── .env.example       # Example environment file
 ├── LICENSE            # MIT License
 └── README.md          # This file
 ```
 
+## 🛠️ Keeping the Bot Working
+
+Most breakages come from three things not matching each other: **yt-dlp**, **discord.py** (with its voice encryption package `davey`) and **Deno**.
+
+| Part | What breaks it | Symptom |
+|------|----------------|---------|
+| yt-dlp | YouTube changes how it serves videos | Song stops after a few seconds, or ffmpeg exits with HTTP 403 |
+| Deno | Missing, or not on PATH | yt-dlp warns "No supported JavaScript runtime", streams fail |
+| discord.py + davey | Updating one without the other (e.g. davey 0.2 with discord.py 2.7) | Bot shows the green speaking ring but nobody hears anything |
+
+How to avoid it:
+1. **Install exact versions:** `pip install -r requirements.txt`. Don't run `pip install -U` on everything.
+2. **Run the health check** before starting the bot, and after any update:
+   ```bash
+   python check.py
+   ```
+   It checks the versions, ffmpeg, Deno, and plays 5 seconds of a YouTube song. Every line should say `[OK]`.
+3. **When YouTube breaks** (check.py fails on the stream), update only yt-dlp, run `python check.py` again, and if it passes, write the new version into `requirements.txt`:
+   ```bash
+   pip install -U "yt-dlp[default]"
+   ```
+4. **Update discord.py and davey only together**, and only when the discord.py release notes say the new davey version is supported.
+
+If no stream works, the bot now says so in the Discord channel ("Could not play ...") instead of silently skipping. `music_source.py` tries several YouTube clients in order (`PLAYER_CLIENTS`); you can change that list if a different client starts working.
+
 ## ⚠️ Notes
 
 - Ensure FFmpeg is installed and added to your system PATH
-- Keep `davey` below 0.2: discord.py 2.7 does not support davey 0.2 yet, and the bot's audio is silent with it
 - `dc_bot.py` uses the channel IDs written at the top of the file; `dc_bot_mcp.py` reads them from `.env`
 - The bot requires permissions: Connect, Speak, Read Messages, Send Messages
 - MCP integration requires [Claude Desktop](https://claude.ai/download)

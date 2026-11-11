@@ -1,8 +1,12 @@
-discord.py
-yt-dlp[default]
-gTTS
-PyNaCl
-davey>=0.1.4,<0.2  # discord.py 2.7.1 does not support davey 0.2 (audio stays unencrypted = silent)
-ffmpeg-python
-fastmcp
-python-dotenv
+# Exact versions that are known to work together (tested 2026-11-11).
+# Do not run "pip install -U" on everything. See "Keeping the bot working" in README.md.
+discord.py==2.7.1
+davey==0.1.7  # discord.py 2.7.1 does not support davey 0.2 (audio stays unencrypted = silent)
+PyNaCl==1.5.0
+# yt-dlp is the one package you update on purpose when YouTube breaks (see README)
+yt-dlp[default]==2026.10.26
+yt-dlp-ejs==0.8.0
+gTTS==2.5.4
+ffmpeg-python==0.2.0
+fastmcp==2.13.3
+python-dotenv==1.2.4

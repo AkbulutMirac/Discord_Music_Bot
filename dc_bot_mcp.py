@@ -10,9 +10,8 @@ from discord.ext import commands
 import discord
 from discord.ext.commands import Context
 
-import yt_dlp
-from yt_dlp import YoutubeDL
 import asyncio
+from music_source import StreamError, find_stream
 
 from gtts import gTTS
 import io
@@ -43,24 +42,6 @@ current_text_channel_id = None
 current_voice_channel_id = None
 
 # Options
-YDL_OPTIONS = {
-    'format': 'ba[ext=m4a]/ba[ext=webm]/ba/b',  
-    'noplaylist': True,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'ytsearch',
-    'geo_bypass': True,  
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'source_address': '0.0.0.0',
-    'socket_timeout': 30,
-    'http_chunk_size': 10485760,
-    'prefer_ffmpeg': True,
-    'keepvideo': False,
-    'extract_flat': False,
-    # Other YouTube clients (tv/web/android_vr) give stream URLs that return 403 to ffmpeg
-    'extractor_args': {'youtube': {'player_client': ['visionos']}},
-}
 FFMPEG_OPTIONS = {
     'before_options': '-thread_queue_size 20480 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
     'options': '-vn -b:a 128k -bufsize 2048k'
@@ -688,8 +669,11 @@ async def process_mcp_commands():
                     await asyncio.sleep(1.5)  # Wait for merhaba to finish
                 
                 if len(my_queue) > 0:
-                    await play_from_queue(voice_client, channel)
-                    await response_queue.put({"status": "ok"})
+                    error = await play_from_queue(voice_client, channel)
+                    if error:
+                        await response_queue.put({"status": "error", "message": error})
+                    else:
+                        await response_queue.put({"status": "ok"})
                 else:
                     await response_queue.put({"status": "error", "message": "Queue is empty. Add songs first."})
                     
@@ -764,15 +748,12 @@ async def play_from_queue(voice_client, channel):
     
     loop = asyncio.get_event_loop()
     
-    def ytdlp_extract():
-        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-            return ydl.extract_info(f"ytsearch:{my_queue[0]}", download=False)
-    
-    result = await loop.run_in_executor(None, ytdlp_extract)
-    first_result = result['entries'][0]
-    url = first_result['url']
-    title = first_result['title']
-    my_queue.pop(0)
+    song = my_queue.pop(0)
+    try:
+        url, title, _ = await loop.run_in_executor(None, find_stream, song)
+    except StreamError as e:
+        await channel.send(f"Could not play '{song}': {e}")
+        return str(e)
     
     source = discord.FFmpegOpusAudio(url, **FFMPEG_OPTIONS)
     
@@ -954,15 +935,12 @@ async def play(ctx: Context, *, song_name: str = None):
     await asyncio.sleep(0.5)
     loop = asyncio.get_event_loop()
     
-    def ytdlp_extract():
-        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-            return ydl.extract_info(f"ytsearch:{my_queue[0]}", download=False)
-    
-    result = await loop.run_in_executor(None, ytdlp_extract)
-    first_result = result['entries'][0]
-    url = first_result['url']
-    title = first_result['title']
-    my_queue.pop(0)
+    song = my_queue.pop(0)
+    try:
+        url, title, _ = await loop.run_in_executor(None, find_stream, song)
+    except StreamError as e:
+        await ctx.send(f"Could not play '{song}': {e}")
+        return
     source = discord.FFmpegOpusAudio(url, **FFMPEG_OPTIONS)
 
     def after_playing(error):
